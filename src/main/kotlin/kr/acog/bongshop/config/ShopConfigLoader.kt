@@ -59,8 +59,7 @@ fun loadShopItemsConfig(dataFolder: File): ShopItemsConfig {
                     id = item.id,
                     shopId = shopId,
                     itemName = item.itemName,
-                    displayName = item.displayName,
-                    lore = item.lore,
+                    item = item.item,
                     payment = item.payment,
                     quantity = item.quantity,
                     basePrice = item.basePrice,
@@ -92,4 +91,27 @@ fun deleteShopItemsFile(dataFolder: File, shopId: String) {
     if (file.exists()) {
         file.delete()
     }
+}
+
+fun saveShopItemsFile(dataFolder: File, shopId: String, items: List<ShopItemConfig>) {
+    val file = File(File(dataFolder, "shop_items"), "$shopId.json")
+    file.parentFile.mkdirs()
+    val entries = items.map { item ->
+        ShopItemFileEntry(
+            id = item.id,
+            itemName = item.itemName,
+            item = item.item,
+            payment = item.payment,
+            quantity = item.quantity,
+            basePrice = item.basePrice,
+            minPrice = item.minPrice,
+            maxPrice = item.maxPrice,
+            slot = item.slot,
+            stock = item.stock,
+            dailyBuyLimit = item.dailyBuyLimit,
+            buyLimit = item.buyLimit,
+            dailySellLimit = item.dailySellLimit
+        )
+    }
+    file.writeText(json.encodeToString(ShopItemsFileConfig(entries)))
 }

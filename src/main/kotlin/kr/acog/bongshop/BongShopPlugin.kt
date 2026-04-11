@@ -4,6 +4,7 @@ import io.typst.view.bukkit.BukkitView
 import kr.acog.bongshop.command.ShopCommandRegistrar
 import kr.acog.bongshop.economy.loadEconomyProviders
 import kr.acog.bongshop.plugin.BongShopExpansion
+import kr.acog.bongshop.plugin.PlayerChatListener
 import kr.acog.bongshop.plugin.generateDefaultConfigs
 import kr.acog.bongshop.shop.PriceChangeScheduler
 import kr.acog.bongshop.shop.ShopManager
@@ -19,22 +20,26 @@ class BongShopPlugin : JavaPlugin() {
         BukkitView.register(this)
         generateDefaultConfigs(dataFolder)
 
-        shopManager = ShopManager(dataFolder, loadEconomyProviders(this, logger), logger)
-        shopManager.initialize()
+        shopManager = ShopManager(dataFolder, loadEconomyProviders(this, logger), logger, this)
 
-        PriceChangeScheduler(shopManager, this).start()
-        StockResetScheduler(shopManager, this).start()
         ShopCommandRegistrar(shopManager, this).register()
+        server.pluginManager.registerEvents(PlayerChatListener(this), this)
 
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             BongShopExpansion(shopManager).register()
         }
 
-        logger.info("BongShop 활성화 완료")
+        shopManager.initialize {
+            PriceChangeScheduler(shopManager, this).start()
+            StockResetScheduler(shopManager, this).start()
+            logger.info("BongShop 활성화 완료")
+        }
     }
 
     override fun onDisable() {
-        shopManager.persistState()
+        if (::shopManager.isInitialized) {
+            shopManager.persistStateSync()
+        }
         logger.info("BongShop 비활성화 완료")
     }
 }

@@ -3,8 +3,8 @@ package kr.acog.bongshop.item
 import kr.acog.bongshop.config.*
 import kr.acog.bongshop.domain.*
 import kr.acog.bongshop.state.ShopItemState
+import kr.acog.bongshop.utils.lore
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.inventory.ItemStack
 
 private enum class TradeMode {
@@ -16,18 +16,20 @@ fun buildBuyDisplayItem(
     base: ItemStack,
     itemConfig: ShopItemConfig,
     itemState: ShopItemState,
-    playerUuid: String
+    playerUuid: String,
+    loreConfig: LoreConfig = LoreConfig()
 ): ItemStack {
-    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.BUY)
+    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.BUY, loreConfig)
 }
 
 fun buildSellDisplayItem(
     base: ItemStack,
     itemConfig: ShopItemConfig,
     itemState: ShopItemState,
-    playerUuid: String
+    playerUuid: String,
+    loreConfig: LoreConfig = LoreConfig()
 ): ItemStack {
-    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.SELL)
+    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.SELL, loreConfig)
 }
 
 private fun buildDisplayItem(
@@ -35,22 +37,16 @@ private fun buildDisplayItem(
     itemConfig: ShopItemConfig,
     itemState: ShopItemState,
     playerUuid: String,
-    mode: TradeMode
+    mode: TradeMode,
+    loreConfig: LoreConfig
 ): ItemStack {
     val clone = base.clone()
     val meta = clone.itemMeta ?: return clone
 
-    if (itemConfig.displayName != null) {
-        meta.displayName(MiniMessage.miniMessage().deserialize(itemConfig.displayName))
-    }
-
     val existingLore = meta.lore() ?: emptyList()
-    val customLore = itemConfig.lore.map { line ->
-        MiniMessage.miniMessage().deserialize(replacePlaceholders(line, itemConfig, itemState, playerUuid))
-    }
-    val autoLore = buildAutoLore(itemConfig, itemState, playerUuid, mode)
+    val autoLore = buildAutoLore(itemConfig, itemState, playerUuid, mode, loreConfig)
 
-    meta.lore(existingLore + customLore + autoLore)
+    meta.lore(existingLore + autoLore)
     clone.itemMeta = meta
     return clone
 }
@@ -59,18 +55,29 @@ private fun buildAutoLore(
     itemConfig: ShopItemConfig,
     itemState: ShopItemState,
     playerUuid: String,
-    mode: TradeMode
+    mode: TradeMode,
+    loreConfig: LoreConfig
 ): List<Component> {
     val currentPrice = formatNumber(itemState.currentPrice)
-    val action = if (mode == TradeMode.BUY) "구매" else "판매"
 
     val lines = buildList {
         when (itemConfig.payment) {
-            is VaultPaymentConfig -> add("<white>$action 가격: $currentPrice 골드")
-            is CoinsEnginePaymentConfig -> add("<white>$action 가격: $currentPrice ${itemConfig.payment.coinName}")
+            is VaultPaymentConfig -> {
+                val template = if (mode == TradeMode.BUY) loreConfig.vaultBuyLore else loreConfig.vaultSellLore
+                add(template.replace("[price]", currentPrice))
+            }
+            is CoinsEnginePaymentConfig -> {
+                val template = if (mode == TradeMode.BUY) loreConfig.coinsEngineBuyLore else loreConfig.coinsEngineSellLore
+                add(template
+                    .replace("[price]", currentPrice)
+                    .replace("[coin_name]", itemConfig.payment.coinName))
+            }
             is ItemPaymentConfig -> {
                 val itemDisplayName = resolveCurrencyDisplayName(itemConfig.payment.currencyItem)
-                add("<white>$action 가격: $itemDisplayName ${currentPrice}개")
+                val template = if (mode == TradeMode.BUY) loreConfig.itemBuyLore else loreConfig.itemSellLore
+                add(template
+                    .replace("[price]", currentPrice)
+                    .replace("[itemname]", itemDisplayName))
             }
         }
 
@@ -78,9 +85,11 @@ private fun buildAutoLore(
             if (itemConfig.stock != null) {
                 val stockRemaining = itemState.stockRemaining ?: 0
                 if (stockRemaining <= 0) {
-                    add("<white>남은 재고 : <red>재고 없음")
+                    add(loreConfig.stockEmptyLore)
                 } else {
-                    add("<white>남은 재고 : ${formatNumber(stockRemaining)}/${formatNumber(itemConfig.stock)}")
+                    add(loreConfig.stockLore
+                        .replace("[amount]", formatNumber(stockRemaining))
+                        .replace("[max_amount]", formatNumber(itemConfig.stock)))
                 }
             }
 
@@ -88,9 +97,11 @@ private fun buildAutoLore(
                 val dailyPurchased = itemState.playerDailyBuyCounts[playerUuid] ?: 0
                 val remaining = itemConfig.dailyBuyLimit - dailyPurchased
                 if (remaining <= 0) {
-                    add("<white>하루당 구매 갯수 : <red>구매 불가")
+                    add(loreConfig.buyLimitEmptyLore)
                 } else {
-                    add("<white>하루당 구매 갯수 : ${formatNumber(remaining)}/${formatNumber(itemConfig.dailyBuyLimit)}")
+                    add(loreConfig.buyLimitLore
+                        .replace("[amount]", formatNumber(remaining))
+                        .replace("[max_amount]", formatNumber(itemConfig.dailyBuyLimit)))
                 }
             }
 
@@ -98,9 +109,11 @@ private fun buildAutoLore(
                 val purchased = itemState.playerBuyCounts[playerUuid] ?: 0
                 val remaining = itemConfig.buyLimit - purchased
                 if (remaining <= 0) {
-                    add("<white>구매 제한 갯수 : <red>구매 불가")
+                    add(loreConfig.buyLimitEmptyLore)
                 } else {
-                    add("<white>구매 제한 갯수 : ${formatNumber(remaining)}/${formatNumber(itemConfig.buyLimit)}")
+                    add(loreConfig.buyLimitLore
+                        .replace("[amount]", formatNumber(remaining))
+                        .replace("[max_amount]", formatNumber(itemConfig.buyLimit)))
                 }
             }
         } else {
@@ -112,51 +125,15 @@ private fun buildAutoLore(
                 val sold = itemState.playerSellCounts[playerUuid] ?: 0
                 val remaining = itemConfig.dailySellLimit - sold
                 if (remaining <= 0) {
-                    add("<white>하루당 판매 갯수 : <red>판매 불가")
+                    add(loreConfig.dailySellLimitEmptyLore)
                 } else {
-                    add("<white>하루당 판매 갯수 : ${formatNumber(remaining)}/${formatNumber(itemConfig.dailySellLimit)}")
+                    add(loreConfig.dailySellLimitLore
+                        .replace("[amount]", formatNumber(remaining))
+                        .replace("[max_amount]", formatNumber(itemConfig.dailySellLimit)))
                 }
             }
         }
     }
 
-    return lines.map { MiniMessage.miniMessage().deserialize(it) }
-}
-
-private fun replacePlaceholders(
-    line: String,
-    itemConfig: ShopItemConfig,
-    itemState: ShopItemState,
-    playerUuid: String
-): String {
-    val stockRemain = itemState.stockRemaining?.let { formatNumber(it) } ?: "∞"
-    val stockMax = itemConfig.stock?.let { formatNumber(it) } ?: "∞"
-    val dailyBuyLimitMax = itemConfig.dailyBuyLimit?.let { formatNumber(it) } ?: "∞"
-    val dailyBuyLimitRemain = if (itemConfig.dailyBuyLimit != null) {
-        val dailyPurchased = itemState.playerDailyBuyCounts[playerUuid] ?: 0
-        formatNumber(itemConfig.dailyBuyLimit - dailyPurchased)
-    } else "∞"
-    val buyLimitMax = itemConfig.buyLimit?.let { formatNumber(it) } ?: "∞"
-    val buyLimitRemain = if (itemConfig.buyLimit != null) {
-        val purchased = itemState.playerBuyCounts[playerUuid] ?: 0
-        formatNumber(itemConfig.buyLimit - purchased)
-    } else "∞"
-    val sellLimitMax = itemConfig.dailySellLimit?.let { formatNumber(it) } ?: "∞"
-    val sellLimitRemain = if (itemConfig.dailySellLimit != null) {
-        val sold = itemState.playerSellCounts[playerUuid] ?: 0
-        formatNumber(itemConfig.dailySellLimit - sold)
-    } else "∞"
-
-    return line
-        .replace("<price>", formatNumber(itemState.currentPrice))
-        .replace("<base_price>", formatNumber(itemConfig.basePrice))
-        .replace("<stock_remain>", stockRemain)
-        .replace("<stock_max>", stockMax)
-        .replace("<daily_buy_limit_remain>", dailyBuyLimitRemain)
-        .replace("<daily_buy_limit_max>", dailyBuyLimitMax)
-        .replace("<buy_limit_remain>", buyLimitRemain)
-        .replace("<buy_limit_max>", buyLimitMax)
-        .replace("<sell_limit_remain>", sellLimitRemain)
-        .replace("<sell_limit_max>", sellLimitMax)
-        .replace("<quantity>", formatNumber(itemConfig.quantity))
+    return lines.map { lore(it) }
 }

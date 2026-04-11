@@ -6,15 +6,24 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import org.bukkit.NamespacedKey
+import org.bukkit.Registry
 import org.bukkit.Sound
 
 object SoundSerializer : KSerializer<Sound> {
     override val descriptor = PrimitiveSerialDescriptor("Sound", PrimitiveKind.STRING)
+
+    @Suppress("DEPRECATION")
     override fun serialize(encoder: Encoder, value: Sound) {
-        encoder.encodeString((value as Enum<*>).name)
+        encoder.encodeString(value.getKey().toString())
     }
+
     override fun deserialize(decoder: Decoder): Sound {
-        return Sound.valueOf(decoder.decodeString())
+        val raw = decoder.decodeString()
+        // "minecraft:entity.player.levelup" 형식 및 "ENTITY_PLAYER_LEVELUP" 형식 모두 지원
+        val key = NamespacedKey.fromString(raw)
+            ?: NamespacedKey.minecraft(raw.lowercase().replace('_', '.'))
+        return Registry.SOUNDS.getOrThrow(key)
     }
 }
 
@@ -23,7 +32,8 @@ data class PluginConfig(
     val priceChangeIntervalMinutes: Int = 60,
     val stockResetTime: String = "00:00",
     val messages: MessagesConfig = MessagesConfig(),
-    val sounds: SoundsConfig = SoundsConfig()
+    val sounds: SoundsConfig = SoundsConfig(),
+    val lore: LoreConfig = LoreConfig()
 )
 
 @Serializable
@@ -66,6 +76,22 @@ data class SoundsConfig(
     val inventoryFull: SoundEntry? = null,
     val stockRestocked: SoundEntry? = null,
     val priceChanged: SoundEntry? = null
+)
+
+@Serializable
+data class LoreConfig(
+    val vaultBuyLore: String = "<white>구매 가격: [price] 골드",
+    val coinsEngineBuyLore: String = "<white>구매 가격: [price] [coin_name]",
+    val itemBuyLore: String = "<white>구매 가격: [itemname] [price]개",
+    val vaultSellLore: String = "<white>판매 가격: [price] 골드",
+    val coinsEngineSellLore: String = "<white>판매 가격: [price] [coin_name]",
+    val itemSellLore: String = "<white>판매 가격: [itemname] [price]개",
+    val stockLore: String = "<white>남은 재고 : [amount]/[max_amount]",
+    val stockEmptyLore: String = "<white>남은 재고 : <red>재고 없음",
+    val buyLimitLore: String = "<white>구매 제한 갯수 : [amount]/[max_amount]",
+    val buyLimitEmptyLore: String = "<white>구매 제한 갯수 : <red>구매 불가",
+    val dailySellLimitLore: String = "<white>하루당 판매 갯수 : [amount]/[max_amount]",
+    val dailySellLimitEmptyLore: String = "<white>남은 판매 갯수 : <red>판매 불가"
 )
 
 @Serializable

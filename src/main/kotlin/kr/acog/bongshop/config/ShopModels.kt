@@ -1,8 +1,10 @@
 package kr.acog.bongshop.config
 
+import io.typst.bukkit.kotlin.serialization.ItemStackSerializable
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonClassDiscriminator
 import kr.acog.bongshop.domain.MoneyType
 import kr.acog.bongshop.domain.PriceChangeType
@@ -14,7 +16,7 @@ data class ShopGuiConfig(
     val id: String,
     val name: String,
     val shopType: ShopType = ShopType.BUY,
-    val title: String = "&6상점",
+    val title: String = "상점",
     val rows: Int = 6,
     val priceChangeType: PriceChangeType = PriceChangeType.RANDOM,
     val backgroundMaterial: Material = Material.AIR,
@@ -46,8 +48,7 @@ data class ShopItemConfig(
     val id: String,
     val shopId: String,
     val itemName: String,
-    val displayName: String? = null,
-    val lore: List<String> = emptyList(),
+    @Transient val item: ItemStackSerializable? = null,
     val payment: PaymentConfig = VaultPaymentConfig(),
     val quantity: Int = 1,
     val basePrice: Int = 0,
@@ -105,8 +106,7 @@ data class ShopItemsFileConfig(
 data class ShopItemFileEntry(
     val id: String,
     val itemName: String,
-    val displayName: String? = null,
-    val lore: List<String> = emptyList(),
+    val item: ItemStackSerializable? = null,
     val payment: PaymentConfig = VaultPaymentConfig(),
     val quantity: Int = 1,
     val basePrice: Int = 0,

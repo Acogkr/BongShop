@@ -53,7 +53,7 @@ fun depositSimilarItems(player: Player, referenceItem: ItemStack, amount: Int): 
     return true
 }
 
-private fun canFitSimilarItems(player: Player, referenceItem: ItemStack, amount: Int): Boolean {
+internal fun canFitSimilarItems(player: Player, referenceItem: ItemStack, amount: Int): Boolean {
     var capacity = 0
     val maxStack = referenceItem.maxStackSize
 

@@ -5,6 +5,7 @@ import kr.acog.bongshop.domain.*
 import kr.acog.bongshop.economy.EconomyOps
 import kr.acog.bongshop.economy.ItemEconomyProvider
 import kr.acog.bongshop.economy.coinsEngineOps
+import kr.acog.bongshop.item.canFitSimilarItems
 import kr.acog.bongshop.item.countSimilarItems
 import kr.acog.bongshop.item.removeSimilarItems
 import kr.acog.bongshop.item.resolveItem
@@ -13,6 +14,9 @@ import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.inventory.ItemStack
+import org.bukkit.plugin.java.JavaPlugin
+import org.bukkit.scheduler.BukkitRunnable
 import java.io.File
 import java.time.Instant
 import java.util.logging.Logger
@@ -20,7 +24,8 @@ import java.util.logging.Logger
 class ShopManager(
     private val dataFolder: File,
     private val economyProviders: Map<MoneyType, Map<String, EconomyOps>>,
-    private val logger: Logger
+    private val logger: Logger,
+    private val plugin: JavaPlugin
 ) {
     private var instances: Map<String, ShopInstance> = emptyMap()
     private var pluginConfig: PluginConfig = PluginConfig()
@@ -28,36 +33,154 @@ class ShopManager(
     private var shopItemsConfig: ShopItemsConfig = ShopItemsConfig()
     private var states: Map<String, ShopState> = emptyMap()
     private var sellRecords: SellRecords = SellRecords()
+
     var lastPriceChangeTime: Instant = Instant.now()
         private set
 
-    fun initialize() {
-        pluginConfig = loadPluginConfig(dataFolder)
-        shopsConfig = loadShopsConfig(dataFolder)
-        shopItemsConfig = loadShopItemsConfig(dataFolder)
-        states = loadAllShopStates(dataFolder)
-        sellRecords = loadSellRecords(dataFolder)
+    fun initialize(onComplete: () -> Unit = {}) {
+        object : BukkitRunnable() {
+            override fun run() {
+                val loadedPluginConfig = loadPluginConfig(dataFolder)
+                val loadedShopsConfig = loadShopsConfig(dataFolder)
+                val loadedShopItemsConfig = loadShopItemsConfig(dataFolder)
+                val loadedStates = loadAllShopStates(dataFolder)
+                val loadedSellRecords = loadSellRecords(dataFolder)
 
-        val validated = validateShopData(pluginConfig, shopsConfig, shopItemsConfig, logger)
+                val validated = validateShopData(loadedPluginConfig, loadedShopsConfig, loadedShopItemsConfig, logger)
+                val newInstances = buildNewInstances(validated, loadedStates)
+                val newStates = loadedStates + newInstances.mapValues { it.value.state }
 
-        val newInstances = mutableMapOf<String, ShopInstance>()
-        for (shopConfig in validated.shopsConfig.shops) {
-            val existingState = states[shopConfig.id]
-            val itemPool = validated.shopItemsConfig.items.filter { it.shopId == shopConfig.id }
-
-            val state = if (existingState != null) {
-                existingState
-            } else {
-                buildInitialState(shopConfig.id, itemPool)
+                object : BukkitRunnable() {
+                    override fun run() {
+                        pluginConfig = loadedPluginConfig
+                        shopsConfig = validated.shopsConfig
+                        shopItemsConfig = validated.shopItemsConfig
+                        states = newStates
+                        sellRecords = loadedSellRecords
+                        instances = newInstances
+                        lastPriceChangeTime = Instant.now()
+                        persistStateAsync()
+                        onComplete()
+                    }
+                }.runTask(plugin)
             }
-
-            newInstances[shopConfig.id] = ShopInstance(shopConfig, itemPool, state)
-        }
-
-        instances = newInstances
-        lastPriceChangeTime = Instant.now()
-        persistState()
+        }.runTaskAsynchronously(plugin)
     }
+
+    fun persistStateAsync() {
+        val statesSnapshot = states
+        val recordsSnapshot = sellRecords
+        object : BukkitRunnable() {
+            override fun run() {
+                saveAllShopStates(dataFolder, statesSnapshot)
+                saveSellRecords(dataFolder, recordsSnapshot)
+            }
+        }.runTaskAsynchronously(plugin)
+    }
+
+    fun persistStateSync() {
+        saveAllShopStates(dataFolder, states)
+        saveSellRecords(dataFolder, sellRecords)
+    }
+
+    fun reloadAll(onComplete: () -> Unit = {}) = initialize(onComplete)
+
+    fun addShop(shopConfig: ShopGuiConfig, onComplete: () -> Unit = {}) {
+        val updated = shopsConfig.copy(shops = shopsConfig.shops + shopConfig)
+        object : BukkitRunnable() {
+            override fun run() {
+                saveShopsConfig(dataFolder, updated)
+                createShopItemsFile(dataFolder, shopConfig.id)
+                object : BukkitRunnable() {
+                    override fun run() { initialize(onComplete) }
+                }.runTask(plugin)
+            }
+        }.runTaskAsynchronously(plugin)
+    }
+
+    fun removeShop(shopId: String, onComplete: () -> Unit = {}) {
+        val updated = shopsConfig.copy(shops = shopsConfig.shops.filter { it.id != shopId })
+        object : BukkitRunnable() {
+            override fun run() {
+                saveShopsConfig(dataFolder, updated)
+                deleteShopItemsFile(dataFolder, shopId)
+                object : BukkitRunnable() {
+                    override fun run() { initialize(onComplete) }
+                }.runTask(plugin)
+            }
+        }.runTaskAsynchronously(plugin)
+    }
+
+    // --- Management methods ---
+
+    fun getAllItemsForShop(shopId: String): List<ShopItemConfig> =
+        shopItemsConfig.items.filter { it.shopId == shopId }
+
+    fun getItem(shopId: String, itemId: String): ShopItemConfig? =
+        shopItemsConfig.items.find { it.shopId == shopId && it.id == itemId }
+
+    fun addItem(shopId: String, item: ItemStack) {
+        val base = item.type.name.lowercase()
+        val id = generateItemId(base, shopId)
+        val newItem = ShopItemConfig(
+            id = id,
+            shopId = shopId,
+            itemName = base,
+            item = item.clone().also { it.amount = 1 },
+            basePrice = 0
+        )
+        shopItemsConfig = shopItemsConfig.copy(items = shopItemsConfig.items + newItem)
+        val instance = instances[shopId]
+        if (instance != null) {
+            instances = instances + (shopId to ShopInstance(instance.guiConfig, instance.items + newItem, instance.state))
+        }
+        saveItemsForShopAsync(shopId)
+    }
+
+    fun updateItem(shopId: String, itemId: String, updater: (ShopItemConfig) -> ShopItemConfig) {
+        val updatedItems = shopItemsConfig.items.map {
+            if (it.shopId == shopId && it.id == itemId) updater(it) else it
+        }
+        shopItemsConfig = shopItemsConfig.copy(items = updatedItems)
+        val instance = instances[shopId]
+        if (instance != null) {
+            val newItems = instance.items.map { item ->
+                if (item.id == itemId) updatedItems.find { it.shopId == shopId && it.id == itemId } ?: item else item
+            }
+            instances = instances + (shopId to ShopInstance(instance.guiConfig, newItems, instance.state))
+        }
+        saveItemsForShopAsync(shopId)
+    }
+
+    fun removeItem(shopId: String, itemId: String) {
+        shopItemsConfig = shopItemsConfig.copy(
+            items = shopItemsConfig.items.filter { !(it.shopId == shopId && it.id == itemId) }
+        )
+        val instance = instances[shopId]
+        if (instance != null) {
+            instances = instances + (shopId to ShopInstance(instance.guiConfig, instance.items.filter { it.id != itemId }, instance.state))
+        }
+        saveItemsForShopAsync(shopId)
+    }
+
+    private fun generateItemId(base: String, shopId: String): String {
+        val existing = shopItemsConfig.items.filter { it.shopId == shopId }.map { it.id }.toSet()
+        if (base !in existing) return base
+        var i = 1
+        while ("${base}_$i" in existing) i++
+        return "${base}_$i"
+    }
+
+    private fun saveItemsForShopAsync(shopId: String) {
+        val items = shopItemsConfig.items.filter { it.shopId == shopId }.toList()
+        object : BukkitRunnable() {
+            override fun run() {
+                saveShopItemsFile(dataFolder, shopId, items)
+            }
+        }.runTaskAsynchronously(plugin)
+    }
+
+    // --- Price / Stock ---
 
     fun refreshPrices() {
         val updatedInstances = mutableMapOf<String, ShopInstance>()
@@ -80,7 +203,7 @@ class ShopManager(
         instances = updatedInstances
         states = updatedStates
         lastPriceChangeTime = Instant.now()
-        persistState()
+        persistStateAsync()
 
         Bukkit.broadcast(MiniMessage.miniMessage().deserialize(pluginConfig.messages.priceChanged))
         val sound = pluginConfig.sounds.priceChanged
@@ -112,7 +235,7 @@ class ShopManager(
 
         instances = updatedInstances
         states = updatedStates
-        persistState()
+        persistStateAsync()
 
         Bukkit.broadcast(MiniMessage.miniMessage().deserialize(pluginConfig.messages.stockRestocked))
         val sound = pluginConfig.sounds.stockRestocked
@@ -122,6 +245,8 @@ class ShopManager(
             }
         }
     }
+
+    // --- Transactions ---
 
     fun processBuy(player: Player, shopId: String, itemId: String, amount: Int): TransactionResult {
         val instance = instances[shopId] ?: return TransactionResult.ItemUnavailable
@@ -176,28 +301,31 @@ class ShopManager(
             else -> return result
         }
 
-        if (!ops.withdraw(player, currentPrice.toDouble() * amount)) {
-            sendMessage(player, pluginConfig.messages.insufficientFundsVault)
-            return TransactionResult.InsufficientFunds
-        }
-
-        val resolvedItem = resolveItem(itemConfig.itemName)?.clone()?.also { it.amount = amount }
+        val resolvedItem = (itemConfig.item?.clone() ?: resolveItem(itemConfig.itemName))?.also { it.amount = amount }
         if (resolvedItem == null) {
             logger.warning("아이템을 찾을 수 없습니다: ${itemConfig.itemName}")
             return TransactionResult.ItemUnavailable
         }
 
-        val leftover = player.inventory.addItem(resolvedItem)
-        if (leftover.isNotEmpty()) {
-            leftover.values.forEach { player.world.dropItem(player.location, it) }
+        if (!canFitSimilarItems(player, resolvedItem, amount)) {
+            sendMessage(player, pluginConfig.messages.inventoryFull)
+            playSound(player, pluginConfig.sounds.inventoryFull)
+            return TransactionResult.InventoryFull
         }
 
-        val updatedState = updateBuyState(instance, itemId, player.uniqueId.toString(), amount)
-        updateInstance(shopId, instance, updatedState)
+        if (!ops.withdraw(player, currentPrice.toDouble() * amount)) {
+            sendMessage(player, pluginConfig.messages.insufficientFundsVault)
+            return TransactionResult.InsufficientFunds
+        }
 
-        val displayName = itemConfig.displayName ?: itemConfig.itemName
+        player.inventory.addItem(resolvedItem)
+
+        val updatedState = updateBuyState(instance, itemId, player.uniqueId.toString(), amount)
+        applyStateUpdate(shopId, instance, updatedState)
+        persistStateAsync()
+
         val successMsg = pluginConfig.messages.purchaseSuccess
-            .replace("<item>", displayName)
+            .replace("<item>", itemConfig.itemName)
             .replace("<price>", formatNumber(currentPrice * amount))
             .replace("<amount>", formatNumber(amount))
         sendMessage(player, successMsg)
@@ -213,7 +341,7 @@ class ShopManager(
         val itemState = instance.state.itemStates[itemId]
             ?: ShopItemState(itemId, null, itemConfig.basePrice)
 
-        val referenceItem = resolveItem(itemConfig.itemName) ?: return TransactionResult.ItemUnavailable
+        val referenceItem = itemConfig.item?.clone() ?: resolveItem(itemConfig.itemName) ?: return TransactionResult.ItemUnavailable
 
         val playerItemCount = player.inventory.contents
             .filterNotNull()
@@ -252,12 +380,12 @@ class ShopManager(
         }
 
         val updatedState = updateSellState(instance, itemId, player.uniqueId.toString(), amount)
-        updateInstance(shopId, instance, updatedState)
+        applyStateUpdate(shopId, instance, updatedState)
         recordSell(player.uniqueId.toString(), shopId, totalEarned)
+        persistStateAsync()
 
-        val displayName = itemConfig.displayName ?: itemConfig.itemName
         val successMsg = pluginConfig.messages.sellSuccess
-            .replace("<item>", displayName)
+            .replace("<item>", itemConfig.itemName)
             .replace("<price>", formatNumber(totalEarned))
             .replace("<amount>", formatNumber(amount))
         sendMessage(player, successMsg)
@@ -272,7 +400,7 @@ class ShopManager(
     }
 
     fun getPlayerItemCount(player: Player, itemConfig: ShopItemConfig): Int {
-        val referenceItem = resolveItem(itemConfig.itemName) ?: return 0
+        val referenceItem = itemConfig.item?.clone() ?: resolveItem(itemConfig.itemName) ?: return 0
         return countSimilarItems(player, referenceItem)
     }
 
@@ -281,25 +409,18 @@ class ShopManager(
     fun allInstances(): Map<String, ShopInstance> = instances
     fun getPluginConfig(): PluginConfig = pluginConfig
     fun getSellRecords(): SellRecords = sellRecords
-    fun reloadAll() = initialize()
 
-    fun persistState() {
-        saveAllShopStates(dataFolder, states)
-        saveSellRecords(dataFolder, sellRecords)
-    }
+    // --- private ---
 
-    fun addShop(shopConfig: ShopGuiConfig) {
-        val updated = shopsConfig.copy(shops = shopsConfig.shops + shopConfig)
-        saveShopsConfig(dataFolder, updated)
-        createShopItemsFile(dataFolder, shopConfig.id)
-        initialize()
-    }
-
-    fun removeShop(shopId: String) {
-        val updated = shopsConfig.copy(shops = shopsConfig.shops.filter { it.id != shopId })
-        saveShopsConfig(dataFolder, updated)
-        deleteShopItemsFile(dataFolder, shopId)
-        initialize()
+    private fun buildNewInstances(validated: ValidatedShopData, loadedStates: Map<String, ShopState>): Map<String, ShopInstance> {
+        val newInstances = mutableMapOf<String, ShopInstance>()
+        for (shopConfig in validated.shopsConfig.shops) {
+            val existingState = loadedStates[shopConfig.id]
+            val itemPool = validated.shopItemsConfig.items.filter { it.shopId == shopConfig.id }
+            val state = existingState ?: buildInitialState(shopConfig.id, itemPool)
+            newInstances[shopConfig.id] = ShopInstance(shopConfig, itemPool, state)
+        }
+        return newInstances
     }
 
     private fun buildInitialState(shopId: String, items: List<ShopItemConfig>): ShopState {
@@ -367,11 +488,9 @@ class ShopManager(
         return instance.state.copy(itemStates = updatedStates)
     }
 
-    private fun updateInstance(shopId: String, instance: ShopInstance, updatedState: ShopState) {
-        val updatedInstance = instance.copy(state = updatedState)
-        instances = instances + (shopId to updatedInstance)
+    private fun applyStateUpdate(shopId: String, instance: ShopInstance, updatedState: ShopState) {
+        instances = instances + (shopId to instance.copy(state = updatedState))
         states = states + (shopId to updatedState)
-        persistState()
     }
 
     private fun recordSell(playerId: String, shopId: String, amount: Long) {
@@ -384,7 +503,6 @@ class ShopManager(
         sellRecords = sellRecords.copy(players = updatedPlayers)
     }
 
-
     private fun resolveEconomyOps(itemConfig: ShopItemConfig): EconomyOps? {
         return when (val payment = itemConfig.payment) {
             is VaultPaymentConfig -> economyProviders[MoneyType.VAULT]?.values?.firstOrNull()
@@ -394,13 +512,12 @@ class ShopManager(
     }
 
     private fun logTransaction(template: String, player: Player, shopId: String, itemConfig: ShopItemConfig, price: Int, amount: Int) {
-        val displayName = itemConfig.displayName ?: itemConfig.itemName
         val shopName = instances[shopId]?.guiConfig?.name ?: shopId
         val msg = template
             .replace("<displayname>", PlainTextComponentSerializer.plainText().serialize(player.displayName()))
             .replace("<playername>", player.name)
             .replace("<shopname>", shopName)
-            .replace("<item>", displayName)
+            .replace("<item>", itemConfig.itemName)
             .replace("<price>", formatNumber(price * amount))
             .replace("<amount>", formatNumber(amount))
         logger.info(msg)

@@ -2,10 +2,11 @@ plugins {
     kotlin("jvm") version "2.2.0"
     kotlin("plugin.serialization") version "2.2.0"
     alias(spigots.plugins.spigot)
+    id("com.gradleup.shadow") version "8.3.6"
 }
 
 group = "kr.acog"
-version = "1.0.0"
+version = "2.0.0"
 
 repositories {
     mavenLocal()
@@ -27,7 +28,7 @@ dependencies {
     compileOnlySpigot(commons.typst.command.bukkit)
     compileOnlySpigot(commons.typst.command.kotlin)
     compileOnlySpigot(commons.typst.bukkitKotlinSerialization)
-    compileOnlySpigot(commons.typst.view.bukkitKotlin)
+    implementation("io.typst:view-bukkit-kotlin:10.1.3")
     compileOnly(commons.kotlinx.serialization.json)
 
 }
@@ -36,13 +37,32 @@ kotlin {
     jvmToolchain(21)
 }
 
+tasks.shadowJar {
+    archiveClassifier.set("")
+    dependencies {
+        exclude(dependency("org.jetbrains.kotlin:.*:.*"))
+        exclude(dependency("org.jetbrains.kotlinx:.*:.*"))
+    }
+
+    exclude("META-INF/*.SF")
+    exclude("META-INF/*.DSA")
+    exclude("META-INF/*.RSA")
+
+    relocate("io.typst.view", "kr.acog.bongshop.shadow.io.typst.view")
+}
+
+tasks.build {
+    dependsOn(tasks.shadowJar)
+}
+
 spigot {
     authors = listOf("Acogkr")
-    softDepend = listOf("Vault", "Coinsengine", "Nexo", "ItemsAdder", "PlaceholderAPI")
+    softDepend = listOf("Vault", "Coinsengine", "PlaceholderAPI")
     apiVersion = "1.21"
 
     commands {
         register("상점") {
+            permission = ""
             description = "상점 명령어"
             usage = "/상점 도움말"
         }

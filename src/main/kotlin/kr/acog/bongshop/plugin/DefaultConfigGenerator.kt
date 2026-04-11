@@ -5,6 +5,7 @@ import kr.acog.bongshop.config.*
 import kr.acog.bongshop.domain.PriceChangeType
 import kr.acog.bongshop.domain.ShopType
 import org.bukkit.Material
+import org.bukkit.Sound
 import java.io.File
 
 private val json = Json {
@@ -24,7 +25,18 @@ private fun generatePluginConfig(dataFolder: File) {
 
     val config = PluginConfig(
         priceChangeIntervalMinutes = 60,
-        stockResetTime = "00:00"
+        stockResetTime = "00:00",
+        sounds = SoundsConfig(
+            purchaseSuccess = SoundEntry(Sound.ENTITY_PLAYER_LEVELUP, volume = 1.0f, pitch = 1.2f),
+            purchaseFail = SoundEntry(Sound.ENTITY_VILLAGER_NO, volume = 1.0f, pitch = 1.0f),
+            sellSuccess = SoundEntry(Sound.ENTITY_EXPERIENCE_ORB_PICKUP, volume = 1.0f, pitch = 1.0f),
+            sellFail = SoundEntry(Sound.ENTITY_VILLAGER_NO, volume = 1.0f, pitch = 0.8f),
+            outOfStock = SoundEntry(Sound.BLOCK_NOTE_BLOCK_BASS, volume = 1.0f, pitch = 0.5f),
+            buyLimitReached = SoundEntry(Sound.BLOCK_NOTE_BLOCK_BASS, volume = 1.0f, pitch = 0.7f),
+            inventoryFull = SoundEntry(Sound.BLOCK_NOTE_BLOCK_BASS, volume = 1.0f, pitch = 0.6f),
+            stockRestocked = SoundEntry(Sound.BLOCK_NOTE_BLOCK_CHIME, volume = 1.0f, pitch = 1.2f),
+            priceChanged = SoundEntry(Sound.BLOCK_NOTE_BLOCK_BELL, volume = 1.0f, pitch = 1.0f)
+        )
     )
 
     file.parentFile.mkdirs()
@@ -89,7 +101,6 @@ private fun generateShopItemsConfig(dataFolder: File) {
                 ShopItemFileEntry(
                     id = "diamond_sword_buy",
                     itemName = "diamond_sword",
-                    displayName = "<yellow>다이아몬드 검",
                     payment = VaultPaymentConfig(),
                     basePrice = 5000,
                     minPrice = 3000,
@@ -102,7 +113,6 @@ private fun generateShopItemsConfig(dataFolder: File) {
                 ShopItemFileEntry(
                     id = "golden_apple_buy",
                     itemName = "golden_apple",
-                    displayName = "<gold>황금 사과",
                     payment = CoinsEnginePaymentConfig(coinName = "gems"),
                     basePrice = 100,
                     minPrice = 50,
@@ -122,7 +132,6 @@ private fun generateShopItemsConfig(dataFolder: File) {
                 ShopItemFileEntry(
                     id = "potato_sell",
                     itemName = "potato",
-                    displayName = "<yellow>감자",
                     payment = VaultPaymentConfig(),
                     quantity = 30,
                     basePrice = 5,

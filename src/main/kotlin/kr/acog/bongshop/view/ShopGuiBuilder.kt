@@ -17,6 +17,8 @@ import kr.acog.bongshop.shop.getPriceChangeRemaining
 import kr.acog.bongshop.shop.ShopInstance
 import kr.acog.bongshop.shop.ShopManager
 import kr.acog.bongshop.state.ShopItemState
+import kr.acog.bongshop.utils.lore
+import kr.acog.bongshop.utils.name
 import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -68,13 +70,10 @@ private fun buildControls(
     guiConfig.nextPageButton?.let { reservedSlots.add(it.slot) }
     guiConfig.timerButton?.let { reservedSlots.add(it.slot) }
 
-    val itemSlots = shopInstance.items
-        .mapNotNull { item -> item.slot?.let { slot -> slot to item } }
-
-    val availableSlots = (0 until totalSlots).filter { it !in reservedSlots }
     val itemsWithSlots = shopInstance.items.filter { it.slot != null }
     val itemsWithoutSlots = shopInstance.items.filter { it.slot == null }
 
+    val availableSlots = (0 until totalSlots).filter { it !in reservedSlots }
     val freeSlots = availableSlots.filter { slot -> itemsWithSlots.none { it.slot == slot } }
     val pageSize = freeSlots.size
     val pagedItems = if (itemsWithoutSlots.isNotEmpty() && pageSize > 0) {
@@ -121,14 +120,15 @@ private fun buildItemControl(
     page: Int
 ): BukkitViewControl {
     val playerId = player.uniqueId.toString()
-    val baseItem = resolveItem(itemConfig.itemName) ?: return ViewControl.just(resolveMissingItem())
+    val baseItem = itemConfig.item?.clone() ?: resolveItem(itemConfig.itemName) ?: return ViewControl.just(resolveMissingItem())
     val itemState = shopInstance.state.itemStates[itemConfig.id]
         ?: ShopItemState(itemConfig.id, itemConfig.stock, itemConfig.basePrice)
 
+    val loreConfig = shopManager.getPluginConfig().lore
     val displayItem = if (isBuyShop) {
-        buildBuyDisplayItem(baseItem, itemConfig, itemState, playerId)
+        buildBuyDisplayItem(baseItem, itemConfig, itemState, playerId, loreConfig)
     } else {
-        buildSellDisplayItem(baseItem, itemConfig, itemState, playerId)
+        buildSellDisplayItem(baseItem, itemConfig, itemState, playerId, loreConfig)
     }
 
     return ViewControl.of(displayItem) { clickEvent: BukkitClickEvent ->
@@ -209,7 +209,6 @@ private fun buildTimerControl(
     timerConfig ?: return emptyMap()
 
     val remaining = getPriceChangeRemaining(shopManager)
-
     val hours = remaining.toHours()
     val minutes = remaining.toMinutesPart()
     val seconds = remaining.toSecondsPart()
@@ -224,36 +223,18 @@ private fun buildTimerControl(
     return mapOf(timerConfig.slot to ViewControl.just(item))
 }
 
-private fun buildButtonItem(material: Material, displayName: String, lore: List<String>, customModelData: Int?): ItemStack {
-    val builder = BukkitItem.builder()
-        .material(material)
-        .displayName(ColorUtils.colorize(displayName))
+private fun buildButtonItem(material: Material, displayNameStr: String, loreLines: List<String>, customModelData: Int?): ItemStack =
+    BukkitItem.builder().material(material).build().create()
+        .also { it.itemMeta = it.itemMeta?.apply {
+            displayName(name(displayNameStr))
+            if (loreLines.isNotEmpty()) lore(loreLines.map { line -> lore(line) })
+            if (customModelData != null) setCustomModelData(customModelData)
+        }}
 
-    if (lore.isNotEmpty()) {
-        builder.lore(lore.map { ColorUtils.colorize(it) }.toList())
-    }
+private fun resolveBackgroundItem(material: Material): ItemStack =
+    BukkitItem.builder().material(material).build().create()
+        .also { it.itemMeta = it.itemMeta?.apply { displayName(name(" ")) } }
 
-    val item = builder.build().create()
-    if (customModelData != null) {
-        val meta = item.itemMeta
-        meta?.setCustomModelData(customModelData)
-        item.itemMeta = meta
-    }
-    return item
-}
-
-private fun resolveBackgroundItem(material: Material): ItemStack {
-    return BukkitItem.builder()
-        .material(material)
-        .displayName(" ")
-        .build()
-        .create()
-}
-
-private fun resolveMissingItem(): ItemStack {
-    return BukkitItem.builder()
-        .material(Material.BARRIER)
-        .displayName(ColorUtils.colorize("<red>X"))
-        .build()
-        .create()
-}
+private fun resolveMissingItem(): ItemStack =
+    BukkitItem.builder().material(Material.BARRIER).build().create()
+        .also { it.itemMeta = it.itemMeta?.apply { displayName(name("<red>X")) } }

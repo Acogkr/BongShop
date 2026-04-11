@@ -15,13 +15,17 @@ class ShopCommandRegistrar(
         val handler = ShopCommandHandler(shopManager, plugin)
         val shopIdArg = strArg.withTabCompletes { shopManager.allShopIds() }
         val shopTypeArg = strArg.withTabCompletes { listOf("구매", "판매") }
+        val createIdArg = strArg.withTabCompletes { listOf("상점ID") }
+        val createDisplayNameArg = strArg.withTabCompletes { listOf("상점이름") }
 
         val commandTree = Command.mapping(
-            Command.pair("생성", Command.argument(ShopCommand::Create, shopTypeArg, strArg, strArg)),
+            Command.pair("생성", Command.argument(ShopCommand::Create, shopTypeArg, createIdArg, createDisplayNameArg)),
             Command.pair("열기", Command.argument(ShopCommand::Open, shopIdArg, playerArg.asOptional())),
             Command.pair("삭제", Command.argument(ShopCommand::Delete, shopIdArg)),
             Command.pair("판매기록", Command.argument(ShopCommand::SellHistory, playerArg)),
-            Command.pair("리로드", Command.present(ShopCommand.Reload))
+            Command.pair("관리", Command.argument(ShopCommand::Manage, shopIdArg.asOptional(), playerArg.asOptional())),
+            Command.pair("리로드", Command.present(ShopCommand.Reload)),
+            Command.pair("목록", Command.present(ShopCommand.List))
         )
 
         BukkitCommands.register("상점", commandTree, { sender, command ->
