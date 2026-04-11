@@ -62,7 +62,7 @@ spigot {
 
     commands {
         register("상점") {
-            permission = ""
+            permission = "bongshop.manager"
             description = "상점 명령어"
             usage = "/상점 도움말"
         }
