@@ -140,6 +140,16 @@ class ShopCommandHandler(
                     ))
                 }
             }
+
+            ShopCommand.ForcePriceChange -> {
+                shopManager.refreshPrices()
+                sender.sendMessage(name("<green>가격이 강제로 변동되었습니다."))
+            }
+
+            ShopCommand.ForceStockReset -> {
+                shopManager.resetStockAndLimits()
+                sender.sendMessage(name("<green>재고가 강제로 입고되었습니다."))
+            }
         }
     }
 }

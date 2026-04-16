@@ -132,24 +132,56 @@ class ShopManager(
         shopItemsConfig = shopItemsConfig.copy(items = shopItemsConfig.items + newItem)
         val instance = instances[shopId]
         if (instance != null) {
-            instances = instances + (shopId to ShopInstance(instance.guiConfig, instance.items + newItem, instance.state))
+            val newItemState = ShopItemState(
+                itemId = id,
+                stockRemaining = newItem.stock,
+                currentPrice = newItem.basePrice
+            )
+            val updatedState = instance.state.copy(
+                itemStates = instance.state.itemStates + (id to newItemState)
+            )
+            instances = instances + (shopId to ShopInstance(instance.guiConfig, instance.items + newItem, updatedState))
+            states = states + (shopId to updatedState)
         }
         saveItemsForShopAsync(shopId)
+        persistStateAsync()
     }
 
     fun updateItem(shopId: String, itemId: String, updater: (ShopItemConfig) -> ShopItemConfig) {
+        val oldItem = shopItemsConfig.items.find { it.shopId == shopId && it.id == itemId }
         val updatedItems = shopItemsConfig.items.map {
             if (it.shopId == shopId && it.id == itemId) updater(it) else it
         }
         shopItemsConfig = shopItemsConfig.copy(items = updatedItems)
+        val newItem = updatedItems.find { it.shopId == shopId && it.id == itemId }
         val instance = instances[shopId]
         if (instance != null) {
             val newItems = instance.items.map { item ->
-                if (item.id == itemId) updatedItems.find { it.shopId == shopId && it.id == itemId } ?: item else item
+                if (item.id == itemId) newItem ?: item else item
             }
-            instances = instances + (shopId to ShopInstance(instance.guiConfig, newItems, instance.state))
+            var updatedState = instance.state
+            if (oldItem != null && newItem != null && oldItem.stock != newItem.stock) {
+                val currentItemState = updatedState.itemStates[itemId]
+                if (currentItemState != null) {
+                    val newStockRemaining = when {
+                        newItem.stock == null -> null
+                        oldItem.stock == null -> newItem.stock
+                        else -> {
+                            val diff = newItem.stock - oldItem.stock
+                            val currentRemaining = currentItemState.stockRemaining ?: oldItem.stock
+                            (currentRemaining + diff).coerceAtLeast(0)
+                        }
+                    }
+                    updatedState = updatedState.copy(
+                        itemStates = updatedState.itemStates + (itemId to currentItemState.copy(stockRemaining = newStockRemaining))
+                    )
+                }
+            }
+            instances = instances + (shopId to ShopInstance(instance.guiConfig, newItems, updatedState))
+            states = states + (shopId to updatedState)
         }
         saveItemsForShopAsync(shopId)
+        persistStateAsync()
     }
 
     fun removeItem(shopId: String, itemId: String) {

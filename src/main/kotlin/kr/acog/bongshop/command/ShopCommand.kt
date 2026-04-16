@@ -11,4 +11,6 @@ sealed interface ShopCommand {
     data class Manage(val shopId: Optional<String>, val targetPlayer: Optional<Player>) : ShopCommand
     data object Reload : ShopCommand
     data object List : ShopCommand
+    data object ForcePriceChange : ShopCommand
+    data object ForceStockReset : ShopCommand
 }

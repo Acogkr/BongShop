@@ -25,7 +25,9 @@ class ShopCommandRegistrar(
             Command.pair("판매기록", Command.argument(ShopCommand::SellHistory, playerArg)),
             Command.pair("관리", Command.argument(ShopCommand::Manage, shopIdArg.asOptional(), playerArg.asOptional())),
             Command.pair("리로드", Command.present(ShopCommand.Reload)),
-            Command.pair("목록", Command.present(ShopCommand.List))
+            Command.pair("목록", Command.present(ShopCommand.List)),
+            Command.pair("가격변동", Command.present(ShopCommand.ForcePriceChange)),
+            Command.pair("재고입고", Command.present(ShopCommand.ForceStockReset))
         )
 
         BukkitCommands.register("상점", commandTree, { sender, command ->
