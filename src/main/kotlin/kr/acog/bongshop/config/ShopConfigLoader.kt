@@ -69,7 +69,9 @@ fun loadShopItemsConfig(dataFolder: File): ShopItemsConfig {
                     stock = item.stock,
                     dailyBuyLimit = item.dailyBuyLimit,
                     buyLimit = item.buyLimit,
-                    dailySellLimit = item.dailySellLimit
+                    dailySellLimit = item.dailySellLimit,
+                    page = item.page,
+                    showPriceChange = item.showPriceChange
                 )
             }
         }
@@ -110,7 +112,9 @@ fun saveShopItemsFile(dataFolder: File, shopId: String, items: List<ShopItemConf
             stock = item.stock,
             dailyBuyLimit = item.dailyBuyLimit,
             buyLimit = item.buyLimit,
-            dailySellLimit = item.dailySellLimit
+            dailySellLimit = item.dailySellLimit,
+            page = item.page,
+            showPriceChange = item.showPriceChange
         )
     }
     file.writeText(json.encodeToString(ShopItemsFileConfig(entries)))

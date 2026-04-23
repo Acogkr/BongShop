@@ -17,9 +17,11 @@ fun buildBuyDisplayItem(
     itemConfig: ShopItemConfig,
     itemState: ShopItemState,
     playerUuid: String,
+    playerBalance: Double,
+    showBalance: Boolean = true,
     loreConfig: LoreConfig = LoreConfig()
 ): ItemStack {
-    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.BUY, loreConfig)
+    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.BUY, playerBalance, 0, showBalance, loreConfig)
 }
 
 fun buildSellDisplayItem(
@@ -27,9 +29,11 @@ fun buildSellDisplayItem(
     itemConfig: ShopItemConfig,
     itemState: ShopItemState,
     playerUuid: String,
+    playerItemCount: Int,
+    showBalance: Boolean = true,
     loreConfig: LoreConfig = LoreConfig()
 ): ItemStack {
-    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.SELL, loreConfig)
+    return buildDisplayItem(base, itemConfig, itemState, playerUuid, TradeMode.SELL, 0.0, playerItemCount, showBalance, loreConfig)
 }
 
 private fun buildDisplayItem(
@@ -38,13 +42,16 @@ private fun buildDisplayItem(
     itemState: ShopItemState,
     playerUuid: String,
     mode: TradeMode,
+    playerBalance: Double,
+    playerItemCount: Int,
+    showBalance: Boolean,
     loreConfig: LoreConfig
 ): ItemStack {
     val clone = base.clone()
     val meta = clone.itemMeta ?: return clone
 
     val existingLore = meta.lore() ?: emptyList()
-    val autoLore = buildAutoLore(itemConfig, itemState, playerUuid, mode, loreConfig)
+    val autoLore = buildAutoLore(itemConfig, itemState, playerUuid, mode, playerBalance, playerItemCount, showBalance, loreConfig)
 
     meta.lore(existingLore + autoLore)
     clone.itemMeta = meta
@@ -56,21 +63,38 @@ private fun buildAutoLore(
     itemState: ShopItemState,
     playerUuid: String,
     mode: TradeMode,
+    playerBalance: Double,
+    playerItemCount: Int,
+    showBalance: Boolean,
     loreConfig: LoreConfig
 ): List<Component> {
-    val currentPrice = formatNumber(itemState.currentPrice)
+    val currentPrice = formatPriceWithChange(
+        itemState.currentPrice,
+        itemConfig.basePrice,
+        loreConfig,
+        itemConfig.showPriceChange
+    )
 
+    var balanceLine: String? = null
     val lines = buildList {
         when (itemConfig.payment) {
             is VaultPaymentConfig -> {
                 val template = if (mode == TradeMode.BUY) loreConfig.vaultBuyLore else loreConfig.vaultSellLore
                 add(template.replace("[price]", currentPrice))
+                if (showBalance && mode == TradeMode.BUY && loreConfig.vaultBalanceLore.isNotBlank()) {
+                    balanceLine = loreConfig.vaultBalanceLore.replace("[balance]", formatNumber(playerBalance))
+                }
             }
             is CoinsEnginePaymentConfig -> {
                 val template = if (mode == TradeMode.BUY) loreConfig.coinsEngineBuyLore else loreConfig.coinsEngineSellLore
                 add(template
                     .replace("[price]", currentPrice)
                     .replace("[coin_name]", itemConfig.payment.coinName))
+                if (showBalance && mode == TradeMode.BUY && loreConfig.coinsEngineBalanceLore.isNotBlank()) {
+                    balanceLine = loreConfig.coinsEngineBalanceLore
+                        .replace("[balance]", formatNumber(playerBalance))
+                        .replace("[coin_name]", itemConfig.payment.coinName)
+                }
             }
             is ItemPaymentConfig -> {
                 val itemDisplayName = resolveCurrencyDisplayName(itemConfig.payment.currencyItem)
@@ -78,6 +102,11 @@ private fun buildAutoLore(
                 add(template
                     .replace("[price]", currentPrice)
                     .replace("[itemname]", itemDisplayName))
+                if (showBalance && mode == TradeMode.BUY && loreConfig.itemBalanceLore.isNotBlank()) {
+                    balanceLine = loreConfig.itemBalanceLore
+                        .replace("[balance]", formatNumber(playerBalance))
+                        .replace("[itemname]", itemDisplayName)
+                }
             }
         }
 
@@ -117,6 +146,12 @@ private fun buildAutoLore(
                 }
             }
         } else {
+            if (showBalance && loreConfig.sellItemHoldingLore.isNotBlank()) {
+                balanceLine = loreConfig.sellItemHoldingLore
+                    .replace("[itemname]", resolveCurrencyDisplayName(itemConfig.itemName))
+                    .replace("[amount]", formatNumber(playerItemCount))
+            }
+
             if (itemConfig.quantity > 1) {
                 add("<white>판매 단위: ${formatNumber(itemConfig.quantity)}개")
             }
@@ -132,6 +167,11 @@ private fun buildAutoLore(
                         .replace("[max_amount]", formatNumber(itemConfig.dailySellLimit)))
                 }
             }
+        }
+
+        balanceLine?.let {
+            add("")
+            add(it)
         }
     }
 

@@ -1,0 +1,93 @@
+================================================================
+ BongShop 설정 가이드
+================================================================
+
+[ 파일 구조 ]
+  config.json          전역 설정 (가격 변동 주기, 메시지, 사운드, lore)
+  shops.json           상점 GUI 정의 (제목, 줄 수, 버튼)
+  shop_items/*.json    상점별 아이템 목록 (파일명 = 상점 id)
+
+
+----------------------------------------------------------------
+ 1. config.json
+----------------------------------------------------------------
+  priceChangeIntervalMinutes  가격 재계산 주기 (분)
+  stockResetTime              일일 재고/제한 리셋 시각 "HH:mm"
+  messages                    트랜잭션 안내 문구
+  sounds                      이벤트별 효과음
+  lore                        아이템 lore 템플릿
+
+  [ messages 플레이스홀더 ]
+    <deficit>            부족한 금액
+    <currency>           재화 표시명
+    <item>               아이템 표시명
+    <price>              실제 거래 가격
+    <amount>             수량
+    <displayname>        플레이어 표시 이름
+    <playername>         플레이어 계정 이름
+    <shopname>           상점 이름
+    <player_displayname> 판매기록 대상 표시 이름
+
+  [ lore 플레이스홀더 ]
+    [price]        현재 가격
+    [coin_name]    CoinsEngine 코인 이름
+    [itemname]     아이템 표시명
+    [amount]       남은 수량 / 보유 수량
+    [max_amount]   최대 수량
+    [balance]      플레이어 보유량
+    [diff]         basePrice 대비 차액 (▲▼ 표시용)
+
+
+----------------------------------------------------------------
+ 2. shops.json
+----------------------------------------------------------------
+  id                  상점 식별자 (shop_items/<id>.json 과 매칭)
+  name                관리 GUI 표시 이름
+  shopType            BUY | SELL
+  title               GUI 상단 제목 (MiniMessage)
+  rows                GUI 줄 수 (1~6)
+  priceChangeType     RANDOM | DEMAND
+  backgroundMaterial  배경 아이템 (AIR = 비활성)
+  showBalanceLore     보유 재화/아이템 lore 표시 여부
+
+  [ 버튼 공통 필드 ]
+    slots            슬롯 번호 또는 [번호, 번호, ...]
+    material         아이템 종류
+    displayName      표시 이름
+    lore             설명 줄
+    customModelData  CMD (선택)
+
+  prevPageButton, nextPageButton, infoButton, timerButton
+
+  [ timerButton.lore 플레이스홀더 ]
+    <hour> <minute> <second>
+
+
+----------------------------------------------------------------
+ 3. shop_items/<shopId>.json
+----------------------------------------------------------------
+  items: [
+    {
+      id              아이템 식별자 (상점 내 고유)
+      itemName        Material 이름 또는 Itemix item id
+      payment         결제 수단 (아래 참고)
+      quantity        1회 거래 단위 (기본 1)
+      basePrice       기준 가격
+      minPrice        최저 가격 (선택)
+      maxPrice        최고 가격 (선택)
+      slot            고정 슬롯 (선택, 미지정시 자동 배치)
+      page            소속 페이지 (기본 1)
+      stock           재고 한도 (BUY 전용)
+      dailyBuyLimit   하루 구매 제한
+      buyLimit        영구 구매 제한
+      dailySellLimit  하루 판매 제한
+      showPriceChange basePrice 대비 ▲▼ 표시 (기본 true)
+    }
+  ]
+
+  [ payment 종류 ]
+    Vault         { "type": "vault" }
+    CoinsEngine   { "type": "coinsEngine", "coinName": "gems" }
+    Item          { "type": "item", "currencyItem": "diamond" }
+
+

@@ -7,8 +7,13 @@ import io.typst.view.ViewControl
 import io.typst.view.bukkit.BukkitView
 import io.typst.view.bukkit.kotlin.*
 import kr.acog.bongshop.ColorUtils
+import kr.acog.bongshop.config.CoinsEnginePaymentConfig
+import kr.acog.bongshop.config.InfoButtonConfig
+import kr.acog.bongshop.config.ItemPaymentConfig
+import kr.acog.bongshop.config.PaymentConfig
 import kr.acog.bongshop.config.ShopItemConfig
 import kr.acog.bongshop.config.TimerButtonConfig
+import kr.acog.bongshop.config.VaultPaymentConfig
 import kr.acog.bongshop.domain.*
 import kr.acog.bongshop.item.buildBuyDisplayItem
 import kr.acog.bongshop.item.buildSellDisplayItem
@@ -30,7 +35,7 @@ fun openShopView(
     player: Player,
     plugin: JavaPlugin,
     shopManager: ShopManager,
-    page: Int = 0
+    page: Int = 1
 ) {
     val backgroundItem = resolveBackgroundItem(shopInstance.guiConfig.backgroundMaterial)
     val view = chestViewBuilder()
@@ -62,51 +67,65 @@ private fun buildControls(
 ): Map<Int, BukkitViewControl> {
     val guiConfig = shopInstance.guiConfig
     val totalSlots = guiConfig.rows * 9
-    val playerId = player.uniqueId.toString()
     val isBuyShop = guiConfig.shopType == ShopType.BUY
 
     val reservedSlots = mutableSetOf<Int>()
-    guiConfig.prevPageButton?.let { reservedSlots.add(it.slot) }
-    guiConfig.nextPageButton?.let { reservedSlots.add(it.slot) }
-    guiConfig.timerButton?.let { reservedSlots.add(it.slot) }
+    guiConfig.prevPageButton?.slots?.let { reservedSlots.addAll(it) }
+    guiConfig.nextPageButton?.slots?.let { reservedSlots.addAll(it) }
+    guiConfig.timerButton?.slots?.let { reservedSlots.addAll(it) }
+    guiConfig.infoButton?.slots?.let { reservedSlots.addAll(it) }
 
-    val itemsWithSlots = shopInstance.items.filter { it.slot != null }
-    val itemsWithoutSlots = shopInstance.items.filter { it.slot == null }
+    val pageItems = shopInstance.items.filter { it.page == page }
+    val itemsWithSlots = pageItems.filter { it.slot != null }
+    val itemsWithoutSlots = pageItems.filter { it.slot == null }
 
     val availableSlots = (0 until totalSlots).filter { it !in reservedSlots }
     val freeSlots = availableSlots.filter { slot -> itemsWithSlots.none { it.slot == slot } }
-    val pageSize = freeSlots.size
-    val pagedItems = if (itemsWithoutSlots.isNotEmpty() && pageSize > 0) {
-        val start = page * pageSize
-        itemsWithoutSlots.drop(start).take(pageSize)
-    } else emptyList()
+    val pagedItems = itemsWithoutSlots.take(freeSlots.size)
 
-    val totalPages = if (itemsWithoutSlots.isNotEmpty() && pageSize > 0) {
-        (itemsWithoutSlots.size + pageSize - 1) / pageSize
-    } else 1
+    val nextEnabled = shopInstance.items.any { it.page > page }
+    val prevEnabled = page > 1
 
     val backgroundControls: Map<Int, BukkitViewControl> = (0 until totalSlots)
         .associateWith { ViewControl.just(backgroundItem) }
+
+    val showBalance = guiConfig.showBalanceLore
+    val balanceCache = mutableMapOf<String, Double>()
+    val itemCountCache = mutableMapOf<String, Int>()
+    fun controlFor(itemConfig: ShopItemConfig): BukkitViewControl {
+        val playerBalance = if (showBalance && isBuyShop) {
+            balanceCache.getOrPut(paymentCacheKey(itemConfig.payment)) {
+                shopManager.getBalance(player, itemConfig)
+            }
+        } else 0.0
+        val playerItemCount = if (showBalance && !isBuyShop) {
+            itemCountCache.getOrPut(itemCacheKey(itemConfig)) {
+                shopManager.getPlayerItemCount(player, itemConfig)
+            }
+        } else 0
+        return buildItemControl(itemConfig, shopInstance, player, shopManager, plugin, isBuyShop, backgroundItem, page, playerBalance, playerItemCount, showBalance)
+    }
 
     val fixedItemControls: Map<Int, BukkitViewControl> = itemsWithSlots
         .mapNotNull { itemConfig ->
             val slot = itemConfig.slot ?: return@mapNotNull null
             if (slot !in 0 until totalSlots) return@mapNotNull null
-            slot to buildItemControl(itemConfig, shopInstance, player, shopManager, plugin, isBuyShop, backgroundItem, page)
+            slot to controlFor(itemConfig)
         }
         .toMap()
 
     val pagedItemControls: Map<Int, BukkitViewControl> = pagedItems
         .zip(freeSlots)
         .map { (itemConfig, slot) ->
-            slot to buildItemControl(itemConfig, shopInstance, player, shopManager, plugin, isBuyShop, backgroundItem, page)
+            slot to controlFor(itemConfig)
         }
         .toMap()
 
-    val navigationControls = buildNavigationControls(guiConfig, shopInstance, player, shopManager, plugin, backgroundItem, page, totalPages)
+    val navigationControls = buildNavigationControls(guiConfig, shopInstance, player, shopManager, plugin, page, prevEnabled, nextEnabled)
     val timerControls = buildTimerControl(guiConfig.timerButton, shopManager)
+    val infoControls = buildInfoControl(guiConfig.infoButton)
 
-    return backgroundControls + fixedItemControls + pagedItemControls + navigationControls + timerControls
+    return backgroundControls + fixedItemControls + pagedItemControls + navigationControls + timerControls + infoControls
 }
 
 private fun buildItemControl(
@@ -117,7 +136,10 @@ private fun buildItemControl(
     plugin: JavaPlugin,
     isBuyShop: Boolean,
     backgroundItem: ItemStack,
-    page: Int
+    page: Int,
+    playerBalance: Double,
+    playerItemCount: Int,
+    showBalance: Boolean
 ): BukkitViewControl {
     val playerId = player.uniqueId.toString()
     val baseItem = itemConfig.item?.clone() ?: resolveItem(itemConfig.itemName) ?: return ViewControl.just(resolveMissingItem())
@@ -126,9 +148,9 @@ private fun buildItemControl(
 
     val loreConfig = shopManager.getPluginConfig().lore
     val displayItem = if (isBuyShop) {
-        buildBuyDisplayItem(baseItem, itemConfig, itemState, playerId, loreConfig)
+        buildBuyDisplayItem(baseItem, itemConfig, itemState, playerId, playerBalance, showBalance, loreConfig)
     } else {
-        buildSellDisplayItem(baseItem, itemConfig, itemState, playerId, loreConfig)
+        buildSellDisplayItem(baseItem, itemConfig, itemState, playerId, playerItemCount, showBalance, loreConfig)
     }
 
     return ViewControl.of(displayItem) { clickEvent: BukkitClickEvent ->
@@ -173,28 +195,32 @@ private fun buildNavigationControls(
     player: Player,
     shopManager: ShopManager,
     plugin: JavaPlugin,
-    backgroundItem: ItemStack,
     page: Int,
-    totalPages: Int
+    prevEnabled: Boolean,
+    nextEnabled: Boolean
 ): Map<Int, BukkitViewControl> {
     val controls = mutableMapOf<Int, BukkitViewControl>()
 
     guiConfig.prevPageButton?.let { btn ->
-        if (page > 0) {
+        if (prevEnabled) {
             val item = buildButtonItem(btn.material, btn.displayName, btn.lore, btn.customModelData)
-            controls[btn.slot] = ViewControl.of(item) { _: BukkitClickEvent ->
-                openShopView(shopInstance, player, plugin, shopManager, page - 1)
-                ViewAction.nothing()
+            btn.slots.forEach { slot ->
+                controls[slot] = ViewControl.of(item) { _: BukkitClickEvent ->
+                    openShopView(shopInstance, player, plugin, shopManager, page - 1)
+                    ViewAction.nothing()
+                }
             }
         }
     }
 
     guiConfig.nextPageButton?.let { btn ->
-        if (page < totalPages - 1) {
+        if (nextEnabled) {
             val item = buildButtonItem(btn.material, btn.displayName, btn.lore, btn.customModelData)
-            controls[btn.slot] = ViewControl.of(item) { _: BukkitClickEvent ->
-                openShopView(shopInstance, player, plugin, shopManager, page + 1)
-                ViewAction.nothing()
+            btn.slots.forEach { slot ->
+                controls[slot] = ViewControl.of(item) { _: BukkitClickEvent ->
+                    openShopView(shopInstance, player, plugin, shopManager, page + 1)
+                    ViewAction.nothing()
+                }
             }
         }
     }
@@ -220,7 +246,13 @@ private fun buildTimerControl(
     }
 
     val item = buildButtonItem(timerConfig.material, timerConfig.displayName, processedLore, timerConfig.customModelData)
-    return mapOf(timerConfig.slot to ViewControl.just(item))
+    return timerConfig.slots.associateWith { ViewControl.just(item) }
+}
+
+private fun buildInfoControl(infoConfig: InfoButtonConfig?): Map<Int, BukkitViewControl> {
+    infoConfig ?: return emptyMap()
+    val item = buildButtonItem(infoConfig.material, infoConfig.displayName, infoConfig.lore, infoConfig.customModelData)
+    return infoConfig.slots.associateWith { ViewControl.just(item) }
 }
 
 private fun buildButtonItem(material: Material, displayNameStr: String, loreLines: List<String>, customModelData: Int?): ItemStack =
@@ -238,3 +270,12 @@ private fun resolveBackgroundItem(material: Material): ItemStack =
 private fun resolveMissingItem(): ItemStack =
     BukkitItem.builder().material(Material.BARRIER).build().create()
         .also { it.itemMeta = it.itemMeta?.apply { displayName(name("<red>X")) } }
+
+private fun paymentCacheKey(payment: PaymentConfig): String = when (payment) {
+    is VaultPaymentConfig -> "vault"
+    is CoinsEnginePaymentConfig -> "coins:${payment.coinName}"
+    is ItemPaymentConfig -> "item:${payment.currencyItem}"
+}
+
+private fun itemCacheKey(itemConfig: ShopItemConfig): String =
+    if (itemConfig.item != null) "id:${itemConfig.id}" else "name:${itemConfig.itemName}"

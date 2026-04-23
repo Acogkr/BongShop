@@ -19,6 +19,9 @@ class BongShopPlugin : JavaPlugin() {
     override fun onEnable() {
         BukkitView.register(this)
         generateDefaultConfigs(dataFolder)
+        if (!java.io.File(dataFolder, "guide.txt").exists()) {
+            saveResource("guide.txt", false)
+        }
 
         shopManager = ShopManager(dataFolder, loadEconomyProviders(this, logger), logger, this)
 

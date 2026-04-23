@@ -58,20 +58,26 @@ private fun generateShopsConfig(dataFolder: File) {
                 priceChangeType = PriceChangeType.RANDOM,
                 backgroundMaterial = Material.AIR,
                 prevPageButton = PageButtonConfig(
-                    slot = 18,
+                    slots = listOf(18),
                     material = Material.ARROW,
                     displayName = "<white>이전 페이지"
                 ),
                 nextPageButton = PageButtonConfig(
-                    slot = 26,
+                    slots = listOf(26),
                     material = Material.ARROW,
                     displayName = "<white>다음 페이지"
                 ),
                 timerButton = TimerButtonConfig(
-                    slot = 22,
+                    slots = listOf(22),
                     material = Material.CLOCK,
                     displayName = "<yellow>가격 변동까지",
                     lore = listOf("<white><hour>시간 <minute>분 <second>초")
+                ),
+                infoButton = InfoButtonConfig(
+                    slots = listOf(4),
+                    material = Material.BOOK,
+                    displayName = "<yellow>상점 정보",
+                    lore = listOf("<gray>치장 아이템을 구매할 수 있는 상점입니다.")
                 )
             ),
             ShopGuiConfig(

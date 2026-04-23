@@ -2,14 +2,51 @@ package kr.acog.bongshop.config
 
 import io.typst.bukkit.kotlin.serialization.ItemStackSerializable
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonClassDiscriminator
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kr.acog.bongshop.domain.MoneyType
 import kr.acog.bongshop.domain.PriceChangeType
 import kr.acog.bongshop.domain.ShopType
 import org.bukkit.Material
+
+object IntOrIntListSerializer : KSerializer<List<Int>> {
+    private val delegate = ListSerializer(Int.serializer())
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun deserialize(decoder: Decoder): List<Int> {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: return delegate.deserialize(decoder)
+        val element = jsonDecoder.decodeJsonElement()
+        return when (element) {
+            is JsonArray -> element.map { it.jsonPrimitive.int }
+            else -> listOf(element.jsonPrimitive.int)
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: List<Int>) {
+        val jsonEncoder = encoder as? JsonEncoder
+        if (jsonEncoder != null) {
+            jsonEncoder.encodeJsonElement(JsonArray(value.map { JsonPrimitive(it) }))
+        } else {
+            delegate.serialize(encoder, value)
+        }
+    }
+}
 
 @Serializable
 data class ShopGuiConfig(
@@ -22,12 +59,14 @@ data class ShopGuiConfig(
     val backgroundMaterial: Material = Material.AIR,
     val prevPageButton: PageButtonConfig? = null,
     val nextPageButton: PageButtonConfig? = null,
-    val timerButton: TimerButtonConfig? = null
+    val timerButton: TimerButtonConfig? = null,
+    val infoButton: InfoButtonConfig? = null,
+    val showBalanceLore: Boolean = true
 )
 
 @Serializable
 data class PageButtonConfig(
-    val slot: Int,
+    @Serializable(with = IntOrIntListSerializer::class) val slots: List<Int>,
     val material: Material = Material.ARROW,
     val displayName: String = "<white>이전 페이지",
     val lore: List<String> = emptyList(),
@@ -36,10 +75,19 @@ data class PageButtonConfig(
 
 @Serializable
 data class TimerButtonConfig(
-    val slot: Int,
+    @Serializable(with = IntOrIntListSerializer::class) val slots: List<Int>,
     val material: Material = Material.CLOCK,
     val displayName: String = "<yellow>가격 변동까지",
     val lore: List<String> = listOf("<white><hour>시간 <minute>분 <second>초"),
+    val customModelData: Int? = null
+)
+
+@Serializable
+data class InfoButtonConfig(
+    @Serializable(with = IntOrIntListSerializer::class) val slots: List<Int>,
+    val material: Material = Material.BOOK,
+    val displayName: String = "<yellow>상점 정보",
+    val lore: List<String> = emptyList(),
     val customModelData: Int? = null
 )
 
@@ -58,7 +106,9 @@ data class ShopItemConfig(
     val stock: Int? = null,
     val dailyBuyLimit: Int? = null,
     val buyLimit: Int? = null,
-    val dailySellLimit: Int? = null
+    val dailySellLimit: Int? = null,
+    val page: Int = 1,
+    val showPriceChange: Boolean = true
 )
 
 @Serializable
@@ -116,5 +166,7 @@ data class ShopItemFileEntry(
     val stock: Int? = null,
     val dailyBuyLimit: Int? = null,
     val buyLimit: Int? = null,
-    val dailySellLimit: Int? = null
+    val dailySellLimit: Int? = null,
+    val page: Int = 1,
+    val showPriceChange: Boolean = true
 )

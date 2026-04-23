@@ -69,7 +69,30 @@ private fun normalizeShopConfig(shop: ShopGuiConfig, logger: Logger): ShopGuiCon
     if (normalizedRows != shop.rows) {
         logger.warning("Adjusted rows for shop ${shop.id}: ${shop.rows} -> $normalizedRows")
     }
-    return shop.copy(rows = normalizedRows)
+    val totalSlots = normalizedRows * 9
+
+    val normalizedPrev = normalizeButtonSlots(shop.prevPageButton?.slots, totalSlots)?.let { shop.prevPageButton!!.copy(slots = it) }
+        .also { if (it == null && shop.prevPageButton != null) logger.warning("Removing prevPageButton for shop ${shop.id}: invalid slots.") }
+    val normalizedNext = normalizeButtonSlots(shop.nextPageButton?.slots, totalSlots)?.let { shop.nextPageButton!!.copy(slots = it) }
+        .also { if (it == null && shop.nextPageButton != null) logger.warning("Removing nextPageButton for shop ${shop.id}: invalid slots.") }
+    val normalizedTimer = normalizeButtonSlots(shop.timerButton?.slots, totalSlots)?.let { shop.timerButton!!.copy(slots = it) }
+        .also { if (it == null && shop.timerButton != null) logger.warning("Removing timerButton for shop ${shop.id}: invalid slots.") }
+    val normalizedInfo = normalizeButtonSlots(shop.infoButton?.slots, totalSlots)?.let { shop.infoButton!!.copy(slots = it) }
+        .also { if (it == null && shop.infoButton != null) logger.warning("Removing infoButton for shop ${shop.id}: invalid slots.") }
+
+    return shop.copy(
+        rows = normalizedRows,
+        prevPageButton = normalizedPrev,
+        nextPageButton = normalizedNext,
+        timerButton = normalizedTimer,
+        infoButton = normalizedInfo
+    )
+}
+
+private fun normalizeButtonSlots(slots: List<Int>?, totalSlots: Int): List<Int>? {
+    if (slots == null) return null
+    val filtered = slots.filter { it in 0 until totalSlots }.distinct()
+    return filtered.takeIf { it.isNotEmpty() }
 }
 
 private fun normalizeItemConfig(item: ShopItemConfig, logger: Logger): ShopItemConfig? {
@@ -98,6 +121,11 @@ private fun normalizeItemConfig(item: ShopItemConfig, logger: Logger): ShopItemC
         return null
     }
 
+    val normalizedPage = if (item.page < 1) {
+        logger.warning("Adjusted page for item ${item.id}: ${item.page} -> 1")
+        1
+    } else item.page
+
     val normalizedPayment = when (val payment = item.payment) {
         is VaultPaymentConfig -> payment
         is CoinsEnginePaymentConfig -> {
@@ -116,5 +144,5 @@ private fun normalizeItemConfig(item: ShopItemConfig, logger: Logger): ShopItemC
         }
     }
 
-    return item.copy(payment = normalizedPayment)
+    return item.copy(payment = normalizedPayment, page = normalizedPage)
 }

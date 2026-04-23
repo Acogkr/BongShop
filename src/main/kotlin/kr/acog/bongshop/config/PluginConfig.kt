@@ -20,7 +20,6 @@ object SoundSerializer : KSerializer<Sound> {
 
     override fun deserialize(decoder: Decoder): Sound {
         val raw = decoder.decodeString()
-        // "minecraft:entity.player.levelup" 형식 및 "ENTITY_PLAYER_LEVELUP" 형식 모두 지원
         val key = NamespacedKey.fromString(raw)
             ?: NamespacedKey.minecraft(raw.lowercase().replace('_', '.'))
         return Registry.SOUNDS.getOrThrow(key)
@@ -91,7 +90,13 @@ data class LoreConfig(
     val buyLimitLore: String = "<white>구매 제한 갯수 : [amount]/[max_amount]",
     val buyLimitEmptyLore: String = "<white>구매 제한 갯수 : <red>구매 불가",
     val dailySellLimitLore: String = "<white>하루당 판매 갯수 : [amount]/[max_amount]",
-    val dailySellLimitEmptyLore: String = "<white>남은 판매 갯수 : <red>판매 불가"
+    val dailySellLimitEmptyLore: String = "<white>남은 판매 갯수 : <red>판매 불가",
+    val priceUpFormat: String = " (<green>▲[diff]</green>)",
+    val priceDownFormat: String = " (<red>▼[diff]</red>)",
+    val vaultBalanceLore: String = "<gray>보유: [balance] 골드",
+    val coinsEngineBalanceLore: String = "<gray>보유: [balance] [coin_name]",
+    val itemBalanceLore: String = "<gray>보유 : [itemname] [balance]개",
+    val sellItemHoldingLore: String = "<gray>보유 : [itemname] [amount]개"
 )
 
 @Serializable

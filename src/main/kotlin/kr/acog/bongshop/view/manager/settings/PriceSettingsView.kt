@@ -58,6 +58,15 @@ fun buildPriceSettingsView(
         ViewAction.Open(buildPriceSettingsView(shopId, updated, shopManager, plugin))
     }
 
+    controls[25] = ViewControl.of(toggleButton(itemConfig.showPriceChange, "가격 변동 표시")) { _ ->
+        shopManager.updateItem(shopId, itemConfig.id) { cfg ->
+            cfg.copy(showPriceChange = !cfg.showPriceChange)
+        }
+        val updated = shopManager.getItem(shopId, itemConfig.id) ?: return@of ViewAction.nothing()
+        isNavigating = true
+        ViewAction.Open(buildPriceSettingsView(shopId, updated, shopManager, plugin))
+    }
+
     // minPrice adjusters (row 3, when enabled)
     if (fluctuationEnabled && itemConfig.minPrice != null) {
         listOf(20 to -100, 21 to -10, 23 to 10, 24 to 100).forEach { (slot, delta) ->

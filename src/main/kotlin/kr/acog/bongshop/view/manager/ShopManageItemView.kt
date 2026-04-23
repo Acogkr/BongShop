@@ -76,6 +76,15 @@ fun buildShopManageItemView(
         ViewAction.Open(buildQuantitySettingsView(shopId, itemConfig, shopManager, plugin))
     }
 
+    controls[18] = ViewControl.of(buildInfoButton(
+        material = Material.BOOK,
+        label = "<gold>페이지 설정",
+        lines = listOf("<gray>현재 페이지  <yellow>${itemConfig.page}")
+    )) { _ ->
+        isNavigating = true
+        ViewAction.Open(buildPageSettingsView(shopId, itemConfig, shopManager, plugin))
+    }
+
     controls[22] = ViewControl.of(buildChangeItemButton()) { click ->
         val cursor = click.player.itemOnCursor
         if (cursor.type.isAir) {
