@@ -6,7 +6,6 @@ import kr.acog.bongshop.economy.loadEconomyProviders
 import kr.acog.bongshop.plugin.BongShopExpansion
 import kr.acog.bongshop.plugin.PlayerChatListener
 import kr.acog.bongshop.plugin.generateDefaultConfigs
-import kr.acog.bongshop.shop.PriceChangeScheduler
 import kr.acog.bongshop.shop.ShopManager
 import kr.acog.bongshop.shop.StockResetScheduler
 import org.bukkit.Bukkit
@@ -33,7 +32,6 @@ class BongShopPlugin : JavaPlugin() {
         }
 
         shopManager.initialize {
-            PriceChangeScheduler(shopManager, this).start()
             StockResetScheduler(shopManager, this).start()
             logger.info("BongShop 활성화 완료")
         }

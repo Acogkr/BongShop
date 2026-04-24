@@ -33,6 +33,7 @@ class ShopManager(
     private var shopItemsConfig: ShopItemsConfig = ShopItemsConfig()
     private var states: Map<String, ShopState> = emptyMap()
     private var sellRecords: SellRecords = SellRecords()
+    private var priceChangeScheduler: PriceChangeScheduler? = null
 
     var lastPriceChangeTime: Instant = Instant.now()
         private set
@@ -59,6 +60,8 @@ class ShopManager(
                         sellRecords = loadedSellRecords
                         instances = newInstances
                         lastPriceChangeTime = Instant.now()
+                        priceChangeScheduler?.stop()
+                        priceChangeScheduler = PriceChangeScheduler(this@ShopManager, plugin).also { it.start() }
                         persistStateAsync()
                         onComplete()
                     }
@@ -220,11 +223,25 @@ class ShopManager(
 
         for ((shopId, instance) in instances) {
             val newItemStates = instance.state.itemStates.toMutableMap()
+            val shopType = instance.guiConfig.shopType
+
+            val maxVolume = instance.items.maxOfOrNull { itemConfig ->
+                val state = newItemStates[itemConfig.id] ?: return@maxOfOrNull 0
+                if (shopType == ShopType.BUY) {
+                    state.totalBought
+                } else {
+                    state.totalSold
+                }
+            } ?: 0
 
             for (itemConfig in instance.items) {
                 val itemState = newItemStates[itemConfig.id] ?: continue
-                val newPrice = calculateNewPrice(instance.guiConfig, itemConfig, itemState)
-                newItemStates[itemConfig.id] = itemState.copy(currentPrice = newPrice)
+                val newPrice = calculateNewPrice(instance.guiConfig, itemConfig, itemState, maxVolume)
+                newItemStates[itemConfig.id] = itemState.copy(
+                    currentPrice = newPrice,
+                    totalBought = 0,
+                    totalSold = 0
+                )
             }
 
             val newState = instance.state.copy(itemStates = newItemStates)
@@ -449,16 +466,16 @@ class ShopManager(
         for (shopConfig in validated.shopsConfig.shops) {
             val existingState = loadedStates[shopConfig.id]
             val itemPool = validated.shopItemsConfig.items.filter { it.shopId == shopConfig.id }
-            val state = existingState ?: buildInitialState(shopConfig.id, itemPool)
+            val state = existingState ?: buildInitialState(shopConfig.id, itemPool, shopConfig.priceVolatility)
             newInstances[shopConfig.id] = ShopInstance(shopConfig, itemPool, state)
         }
         return newInstances
     }
 
-    private fun buildInitialState(shopId: String, items: List<ShopItemConfig>): ShopState {
+    private fun buildInitialState(shopId: String, items: List<ShopItemConfig>, volatility: Double): ShopState {
         val itemStates = items.associate { itemConfig ->
             val price = if (itemConfig.minPrice != null && itemConfig.maxPrice != null) {
-                calculateRandomPrice(itemConfig.minPrice, itemConfig.maxPrice)
+                calculateRandomPrice(itemConfig.minPrice, itemConfig.maxPrice, volatility)
             } else {
                 itemConfig.basePrice
             }
@@ -471,13 +488,20 @@ class ShopManager(
         return ShopState(shopId = shopId, itemStates = itemStates)
     }
 
-    private fun calculateNewPrice(guiConfig: ShopGuiConfig, itemConfig: ShopItemConfig, itemState: ShopItemState): Int {
+    private fun calculateNewPrice(guiConfig: ShopGuiConfig, itemConfig: ShopItemConfig, itemState: ShopItemState, maxVolume: Int): Int {
         val min = itemConfig.minPrice ?: return itemConfig.basePrice
         val max = itemConfig.maxPrice ?: return itemConfig.basePrice
 
         return when (guiConfig.priceChangeType) {
-            PriceChangeType.RANDOM -> calculateRandomPrice(min, max)
-            PriceChangeType.DEMAND -> calculateDemandPrice(itemConfig.basePrice, min, max, itemState.recentSales)
+            PriceChangeType.RANDOM -> calculateRandomPrice(min, max, guiConfig.priceVolatility)
+            PriceChangeType.DEMAND -> {
+                val itemVolume = if (guiConfig.shopType == ShopType.BUY) {
+                    itemState.totalBought
+                } else {
+                    itemState.totalSold
+                }
+                calculateDemandPrice(min, max, guiConfig.shopType, itemVolume, maxVolume)
+            }
         }
     }
 
@@ -490,13 +514,11 @@ class ShopManager(
         val updatedCounts = itemState.playerBuyCounts.toMutableMap()
         updatedCounts[playerId] = (updatedCounts[playerId] ?: 0) + amount
 
-        val updatedSales = (itemState.recentSales + amount).takeLast(10)
-
         val updatedItemState = itemState.copy(
             stockRemaining = itemState.stockRemaining?.minus(amount),
             playerDailyBuyCounts = updatedDailyCounts,
             playerBuyCounts = updatedCounts,
-            recentSales = updatedSales
+            totalBought = itemState.totalBought + amount
         )
         val updatedStates = instance.state.itemStates.toMutableMap()
         updatedStates[itemId] = updatedItemState
@@ -509,11 +531,9 @@ class ShopManager(
         val updatedCounts = itemState.playerSellCounts.toMutableMap()
         updatedCounts[playerId] = (updatedCounts[playerId] ?: 0) + amount
 
-        val updatedSales = (itemState.recentSales + amount).takeLast(10)
-
         val updatedItemState = itemState.copy(
             playerSellCounts = updatedCounts,
-            recentSales = updatedSales
+            totalSold = itemState.totalSold + amount
         )
         val updatedStates = instance.state.itemStates.toMutableMap()
         updatedStates[itemId] = updatedItemState

@@ -9,7 +9,8 @@ data class ShopItemState(
     val itemId: String,
     val stockRemaining: Int?,
     val currentPrice: Int = 0,
-    val recentSales: List<Int> = emptyList(),
+    val totalBought: Int = 0,
+    val totalSold: Int = 0,
     val playerDailyBuyCounts: Map<String, Int> = emptyMap(),
     val playerBuyCounts: Map<String, Int> = emptyMap(),
     val playerSellCounts: Map<String, Int> = emptyMap()

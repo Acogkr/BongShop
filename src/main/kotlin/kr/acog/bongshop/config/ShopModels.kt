@@ -56,6 +56,7 @@ data class ShopGuiConfig(
     val title: String = "상점",
     val rows: Int = 6,
     val priceChangeType: PriceChangeType = PriceChangeType.RANDOM,
+    val priceVolatility: Double = 1.0,
     val backgroundMaterial: Material = Material.AIR,
     val prevPageButton: PageButtonConfig? = null,
     val nextPageButton: PageButtonConfig? = null,

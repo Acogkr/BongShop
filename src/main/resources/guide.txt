@@ -47,8 +47,15 @@
   title               GUI 상단 제목 (MiniMessage)
   rows                GUI 줄 수 (1~6)
   priceChangeType     RANDOM | DEMAND
+  priceVolatility     RANDOM 변동폭 (기본 1.0)
   backgroundMaterial  배경 아이템 (AIR = 비활성)
   showBalanceLore     보유 재화/아이템 lore 표시 여부
+
+  [ priceVolatility 값 ]
+    0.5   평균 근처에 집중
+    1.0   기본
+    1.5   넓게 분포
+    2.0+  min/max 빈도 증가
 
   [ 버튼 공통 필드 ]
     slots            슬롯 번호 또는 [번호, 번호, ...]
@@ -87,7 +94,7 @@
 
   [ payment 종류 ]
     Vault         { "type": "vault" }
-    CoinsEngine   { "type": "coinsEngine", "coinName": "gems" }
+    CoinsEngine   { "type": "coinsEngine", "coinName": "gems"... }
     Item          { "type": "item", "currencyItem": "diamond" }
 
 
